@@ -8,6 +8,7 @@ from piwps.attacks import wps
 from piwps.attacks.psk import quote, key_mgmt_for
 from piwps.scan import parse_scan_results, sec_of, has_wps, strongest, rank_key
 from piwps import wordlists
+from piwps import pixie
 from piwps.state import filter_done, DoneLog, RunBudget, StatusWriter
 from piwps.report import list_sweeps, audit_markdown
 
@@ -137,3 +138,40 @@ def test_dashboard_status_with_mocked_radio(tmp_path):
     s = app.build_status()
     assert s["svc"] == {"pi-pwn": "active", "pi-dash": "active"}
     assert s["tried"] == 0 and s["nets"] == []
+
+
+def _tlv(t, v):
+    return bytes([(t >> 8) & 0xFF, t & 0xFF, (len(v) >> 8) & 0xFF, len(v) & 0xFF]) + bytes(v)
+
+
+def test_pixie_tlv_decode_split():
+    m1 = (_tlv(0x1022, b"\x04") + _tlv(0x101A, bytes(range(16)))
+          + _tlv(0x1032, bytes([9]) * 192))
+    msgs = pixie.split_messages(pixie.decode_tlvs(m1))
+    assert msgs["M1"][0x101A] == bytes(range(16))
+    assert len(msgs["M1"][0x1032]) == 192
+    assert pixie.decode_tlvs(b"\x10\x22\x00") == []  # truncated tail safe
+
+
+def test_pixie_dd_attributes():
+    line = "WPS:  Enrollee Nonce - hexdump(len=16): 99 b4 e7 4a 90 70 90 c2 9c 7d 67 cb a4 3f 9b d0"
+    found = pixie.parse_dd_attributes(line)
+    assert found[pixie.T_ENONCE] == "99b4e74a907090c29c7d67cba43f9bd0"
+
+
+def test_pixie_reassemble_and_harvest():
+    m2 = (_tlv(0x1022, b"\x05") + _tlv(0x1039, bytes([7]) * 16)
+          + _tlv(0x1032, bytes([8]) * 192) + _tlv(0x1014, bytes([5]) * 32)
+          + _tlv(0x1015, bytes([6]) * 32))
+    hx = "\n".join(" ".join(f"{b:02x}" for b in m2[i:i + 16]) + " "
+                     for i in range(0, len(m2), 16))
+    text = ("EAPOL: something hexdump(len=%d):\n     %s\n"
+            "WPS:  Enrollee Nonce - hexdump(len=16): 99 b4 e7\n" % (len(m2), hx.replace("\n", "\n     ")))
+    h = pixie.harvest(text)
+    assert h["M2"][pixie.T_RNONCE] == "07" * 16
+    assert pixie.have_minimum_for_pixie(
+        {"M1": {pixie.T_PUBKEY: "aa" * 192, pixie.T_ENONCE: "bb" * 16},
+         "M2": h["M2"], "attrs": {}}) is True
+    assert pixie.have_minimum_for_pixie({"attrs": {}}) is False
+    args = pixie.pixie_args(h, essid="X")
+    assert "--pkr" in args and "--essid" in args

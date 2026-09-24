@@ -13,7 +13,7 @@ echo "[*] stopping normal wlan1 supplicant..."
 wpa_cli -p $CTRL -i $IF terminate >/dev/null 2>&1
 sleep 3
 echo "[*] starting DEBUG supplicant (log=$OUT/wpa-debug.log)..."
-wpa_supplicant -B -dd -i $IF -c $CONF -D nl80211 -f "$OUT/wpa-debug.log" 2>&1 | head -2
+wpa_supplicant -B -ddd -i $IF -c $CONF -D nl80211 -f "$OUT/wpa-debug.log" 2>&1 | head -2
 sleep 4
 echo "[*] driving one WPS session (PIN 12345670, wrong-on-purpose)..."
 wpa_cli -p $CTRL -i $IF wps_pin "$BSSID" 12345670 2>&1 | head -1
