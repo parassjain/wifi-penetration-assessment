@@ -142,7 +142,11 @@ def build_status():
     run_state = ("FINISHED" if done_flag
                  else ("RUNNING" if (status_age is not None and status_age < 300) else "STALLED"))
     return {
-        "target": result.get("target") or live_run.get("target") or "Actyoga",
+        "target": result.get("target") or live_run.get("target"),
+        "security": result.get("security"),
+        "bssid": result.get("bssid"),
+        "wlan0_intact": result.get("wlan0_intact"),
+        "results_dir": out,
         "tried": tried, "total": total, "current": current, "phase": phase, "pct": pct,
         "run_state": run_state, "status_age_sec": status_age,
         "budget_left_min": live_run.get("budget_left_min"),
@@ -157,7 +161,11 @@ def build_status():
         "scan_age_sec": int(time.time() - live["at"]) if live.get("at") else None,
         "scan_at": live.get("at_iso", "-"),
         "net_count": len(nets), "nets": nets[:30],
-        "log_tail": tail(os.path.join(out, "console.log"), 12),
+        "log_tail": tail(os.path.join(out, "console.log"), 16)
+                    or tail(os.path.join(out, "pwn.log"), 16),
+        "log_source": "console.log"
+                    if tail(os.path.join(out, "console.log"), 1)
+                    else ("pwn.log" if tail(os.path.join(out, "pwn.log"), 1) else None),
         "wps": list_sweeps(_repo_dir()),
     }
 

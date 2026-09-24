@@ -1,46 +1,393 @@
-<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Pi Pwn Dashboard</title><style>
-body{font-family:system-ui,sans-serif;background:#0f1420;color:#e8ecf4;margin:0;padding:16px}
-h1{font-size:20px;margin:0 0 12px}.card{background:#1a2233;border-radius:10px;padding:12px 16px;margin-bottom:12px}
-.big{font-size:34px;font-weight:700}.ok{color:#4ade80}.bad{color:#f87171}.mut{color:#93a0b8}
-table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:4px 6px;border-bottom:1px solid #2a3550;text-align:left}
-pre{background:#0b0f18;border-radius:8px;padding:10px;overflow:auto;font-size:12px;max-height:260px}
-#b{position:fixed;top:12px;right:14px;font-size:12px;color:#93a0b8}
-button{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer}
-button:disabled{opacity:.5}.wpsy{color:#fbbf24;font-weight:700}
-.bar{height:10px;background:#0b0f18;border-radius:6px;overflow:hidden;margin:8px 0}
-.bar>div{height:100%;background:#2563eb}
-.pill{display:inline-block;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:700}
-.run{background:#14532d;color:#4ade80}.stall{background:#7f1d1d;color:#f87171}.fin{background:#1e3a8a;color:#93c5fd}
-</style></head><body><div id=b>auto-refresh 5s</div><h1>&#128737; Pi Autopwner &mdash; live</h1>
-<div id=u>loading&hellip;</div>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab radio console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Fira+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #020617;
+  --card: #0f172a;
+  --card-2: #111c33;
+  --line: #334155;
+  --text: #f8fafc;
+  --muted: #cbd5e1;
+  --faint: #94a3b8;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --bad: #fca5a5;
+  --bad-bg: #450a0a;
+  --warn: #fde68a;
+  --warn-bg: #422006;
+  --info: #93c5fd;
+  --info-bg: #172554;
+  --bar: #38bdf8;
+  --focus: #e2e8f0;
+}
+* { box-sizing: border-box; }
+html { color-scheme: dark; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 "Fira Sans", "Segoe UI", sans-serif;
+}
+button, input { font: inherit; }
+button { cursor: pointer; }
+button:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; margin-bottom: 20px; }
+h1 { font-size: 24px; line-height: 1.2; margin: 0; font-weight: 600; }
+h2 { font-size: 16px; margin: 0; font-weight: 600; }
+.kicker { margin: 0 0 4px; color: var(--faint); font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
+.header-side { text-align: right; color: var(--muted); font-size: 14px; }
+.grid { display: grid; gap: 12px; }
+.metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 12px; }
+.radios { grid-template-columns: 1fr 1fr; margin-bottom: 12px; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.card + .card { margin-top: 12px; }
+.section-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 10px; }
+.stat-label { color: var(--faint); font-size: 13px; }
+.stat-value { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat-sub { color: var(--muted); font-size: 14px; margin-top: 2px; }
+.pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.pill.run { color: var(--ok); background: var(--ok-bg); border-color: #166534; }
+.pill.bad { color: var(--bad); background: var(--bad-bg); border-color: #7f1d1d; }
+.pill.info { color: var(--info); background: var(--info-bg); border-color: #1e3a8a; }
+.pill.warn { color: var(--warn); background: var(--warn-bg); border-color: #854d0e; }
+.pill.neutral { color: var(--muted); background: var(--card-2); border-color: var(--line); }
+.bar { height: 8px; background: #020617; border: 1px solid var(--line); border-radius: 99px; overflow: hidden; margin: 10px 0; }
+.bar > div { height: 100%; background: var(--bar); width: 0; }
+.kv { display: grid; grid-template-columns: 92px 1fr; gap: 4px 8px; margin: 8px 0 0; font-size: 15px; }
+.kv dt { color: var(--faint); }
+.kv dd { margin: 0; font-family: "Fira Code", ui-monospace, monospace; font-size: 13px; overflow-wrap: anywhere; }
+.banner { border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; border: 1px solid var(--line); }
+.banner.ok { background: var(--ok-bg); border-color: #166534; }
+.banner.bad { background: var(--bad-bg); border-color: #7f1d1d; }
+.banner.warn { background: var(--warn-bg); border-color: #854d0e; }
+.banner strong { font-family: "Fira Code", ui-monospace, monospace; font-weight: 500; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { color: var(--faint); font-weight: 500; font-size: 13px; }
+.sig { display: flex; align-items: center; gap: 8px; min-width: 110px; }
+.sig-track { flex: 1; height: 6px; background: #020617; border-radius: 99px; overflow: hidden; border: 1px solid var(--line); }
+.sig-track > div { height: 100%; background: var(--muted); }
+.mono { font-family: "Fira Code", ui-monospace, monospace; font-size: 12px; }
+pre {
+  margin: 0;
+  background: #020617;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  overflow: auto;
+  max-height: 280px;
+  font-family: "Fira Code", ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.btn {
+  background: #1e293b;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-height: 40px;
+}
+.btn:hover { background: #273449; }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn.primary { background: #1d4ed8; border-color: #1d4ed8; }
+.btn.primary:hover { background: #1e40af; }
+.note { color: var(--muted); font-size: 14px; }
+.empty { color: var(--muted); padding: 8px 0; }
+details { margin-top: 8px; }
+summary { cursor: pointer; color: var(--muted); }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+@media (max-width: 800px) {
+  .metrics, .radios { grid-template-columns: 1fr 1fr; }
+  header { flex-direction: column; align-items: flex-start; }
+  .header-side { text-align: left; }
+}
+@media (max-width: 560px) {
+  .metrics, .radios { grid-template-columns: 1fr; }
+  table { display: block; overflow-x: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <p class="kicker">Course lab</p>
+      <h1>Radio console</h1>
+    </div>
+    <div class="header-side">
+      <div id="clock">Waiting for the first status read</div>
+      <div id="services"></div>
+    </div>
+  </header>
+  <div id="banner"></div>
+  <section class="grid metrics" id="metrics" aria-label="Run summary"></section>
+  <section class="grid radios" aria-label="Radios">
+    <article class="card" id="radio0"></article>
+    <article class="card" id="radio1"></article>
+  </section>
+  <section class="card" id="wps-card">
+    <div class="section-head">
+      <h2>WPS sweeps</h2>
+      <span class="note" id="wps-count"></span>
+    </div>
+    <div id="wps"></div>
+  </section>
+  <section class="card">
+    <div class="section-head">
+      <div>
+        <h2>Networks in the last scan</h2>
+        <div class="note" id="scan-meta"></div>
+      </div>
+      <button class="btn" id="rescan" type="button">Refresh scan</button>
+    </div>
+    <div id="scan-msg" class="note" hidden></div>
+    <div id="nets"></div>
+  </section>
+  <section class="card">
+    <div class="section-head">
+      <h2>Recent log</h2>
+      <span class="note" id="log-source"></span>
+    </div>
+    <pre id="log">No log lines yet.</pre>
+  </section>
+</div>
 <script>
-let lastNets=[];
-async function r(){try{const s=await (await fetch('/api/status')).json();lastNets=s.nets||[];
-document.getElementById('u').innerHTML=
-`<div class=card><div class=mut>TARGET <b style="color:#fff">${s.target}</b> &middot; phase: ${s.phase} &middot; started ${s.started||'-'} &middot; budget left: ${s.budget_left_min??'-'} min</div>
-<div><span class="pill ${s.run_state=='RUNNING'?'run':(s.run_state=='FINISHED'?'fin':'stall')}">${s.run_state}</span>
-<span class=mut> status ${s.status_age_sec??'-'}s ago &middot; svc pi-pwn:${s.svc['pi-pwn']||'?'} pi-dash:${s.svc['pi-dash']||'?'}</span></div>
-<div class=big>${s.tried} <span class=mut style="font-size:18px">/ ${s.total} (${s.pct}%)</span></div>
-<div class=bar><div style="width:${s.pct}%"></div></div>
-<div>trying now: <b>${s.current}</b> &middot; rate: ${s.rate_per_min||'-'}/min &middot; ETA: ${s.eta_min??'-'} min</div>
-${s.found?`<div class=ok style="font-size:20px;font-weight:700;margin-top:8px">&#127881; PASSWORD: ${s.creds||s.found}</div>`:''}</div>
-<div class=card><b>wlan0</b> (home/SSH): <span class="${s.wlan0.state=='COMPLETED'?'ok':'bad'}">${s.wlan0.state}</span> ${s.wlan0.ssid} ${s.wlan0.ip}
-&emsp;<b>wlan1</b> (attacker): ${s.wlan1.state}</div>
-<div class=card><b>WPS sweeps</b> <span class=mut>(PIN-only attacks — digits, live)</span>
-${s.wps.length? s.wps.map(w=>`<div style="margin-top:8px"><b>${w.dir}</b>
-<span class="pill ${w.state=='RUNNING'?'run':(w.state=='SUCCESS'?'run':(w.state=='FINISHED'?'fin':'stall'))}">${w.state}</span>
-<span class=mut>${w.tried}/${w.total} &middot; now: <b>${w.current}</b> &middot; ${w.age_sec}s ago</span>
-<pre style="max-height:90px">${w.tail.join('\n')}</pre></div>`).join('') : '<div class=mut>No WPS sweeps yet</div>'}</div>
-<div class=card><b>WiFi around (${s.net_count})</b> <span class=mut>${s.scan_live?'LIVE scan '+s.scan_at+' ('+s.scan_age_sec+'s ago)':'snapshot from attack start'}</span>
-&ensp;<button id=rs onclick="rescan()">&#8635; Refresh live scan (~10s)</button><span id=rm class=mut></span>
-<table><tr><th>SSID</th><th>BSSID</th><th>Sig</th><th>Sec</th><th>WPS</th><th>Action</th><th>Flags</th></tr>${s.nets.map((n,i)=>`<tr><td>${n.ssid||'<i>hidden</i>'}</td><td>${n.bssid}</td><td>${n.signal}</td><td>${n.sec}</td><td class="${n.wps?'wpsy':''}">${n.wps?'YES':''}</td><td>${n.wps&&n.ssid?`<button onclick="wpsStart(${i})">\u25b6 WPS test</button>`:''}</td><td class=mut>${n.flags}</td></tr>`).join('')}</table></div>
-<div class=card><b>Live log</b><pre>${s.log_tail.join('\n')}</pre></div>`;
-}catch(e){document.getElementById('u').innerHTML='fetch error: '+e}}
-async function rescan(){const b=document.getElementById('rs');b.disabled=true;document.getElementById('rm').textContent=' scanning…';
-try{await fetch('/api/rescan');}catch(e){}b.disabled=false;r();}
-async function wpsStart(i){const n=lastNets[i];if(!n||!n.wps)return;
-if(!confirm(`Start WPS PIN test vs "${n.ssid}" (${n.bssid})?\nOne sweep at a time; ~25 min for 63 PINs. AP may lock WPS after abuse.`))return;
-const res=await (await fetch(`/api/wps-start?bssid=${encodeURIComponent(n.bssid)}&ssid=${encodeURIComponent(n.ssid)}`)).json();
-alert(res.started?`WPS test started: ${res.started} (pid ${res.pid})`:`Not started: ${res.error}`);r();}
-r();setInterval(r,5000)</script></body></html>
+const $ = (id) => document.getElementById(id);
+let lastNets = [];
+let pollTimer = null;
+
+function esc(v) {
+  return String(v ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+function dash(v) { return v === null || v === undefined || v === "" ? "—" : v; }
+function pill(state) {
+  const s = state || "UNKNOWN";
+  const kind = s === "RUNNING" || s === "SUCCESS" ? "run"
+    : s === "FINISHED" ? "info"
+    : s === "LOCKED-STOP" || s === "STALLED" ? "bad"
+    : "neutral";
+  return `<span class="pill ${kind}">${esc(s)}</span>`;
+}
+function signalPct(sig) {
+  const n = Number(sig);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(4, Math.min(100, Math.round(((n + 95) / 65) * 100)));
+}
+function ageText(sec) {
+  if (sec === null || sec === undefined) return "—";
+  if (sec < 60) return sec + "s ago";
+  const m = Math.floor(sec / 60);
+  if (m < 60) return m + "m ago";
+  return Math.floor(m / 60) + "h ago";
+}
+
+function renderBanner(s) {
+  const el = $("banner");
+  if (s.found || s.creds) {
+    el.className = "banner ok";
+    el.innerHTML = `<div class="stat-label">Recovered secret</div><strong>${esc(s.creds || s.found)}</strong>`;
+    return;
+  }
+  if (s.run_state === "STALLED") {
+    el.className = "banner warn";
+    el.textContent = "No status update for several minutes. The run looks stalled, or this results directory is idle.";
+    return;
+  }
+  if (s.wlan0 && s.wlan0.state && s.wlan0.state !== "COMPLETED" && s.wlan0.state !== "?") {
+    el.className = "banner bad";
+    el.textContent = "Management radio is not associated. SSH and internet depend on wlan0.";
+    return;
+  }
+  el.className = "";
+  el.innerHTML = "";
+}
+
+function renderMetrics(s) {
+  const items = [
+    ["Run", pill(s.run_state), dash(s.target) === "—" ? "No target in this directory" : esc(s.target)],
+    ["Progress", `${dash(s.tried)} / ${dash(s.total)}`, s.total ? esc(s.pct) + "%" : "No attempt counter yet"],
+    ["Budget left", s.budget_left_min == null ? "—" : esc(s.budget_left_min) + " min", "Rate " + (s.rate_per_min == null ? "—" : esc(s.rate_per_min) + "/min")],
+    ["ETA", s.eta_min == null ? "—" : esc(s.eta_min) + " min", "Updated " + ageText(s.status_age_sec)],
+  ];
+  $("metrics").innerHTML = items.map(([label, value, sub]) =>
+    `<article class="card"><div class="stat-label">${label}</div><div class="stat-value">${value}</div><div class="stat-sub">${sub}</div></article>`
+  ).join("");
+}
+
+function radioCard(title, role, iface) {
+  const state = iface.state || "?";
+  const ok = state === "COMPLETED";
+  const unknown = state === "?";
+  const kind = ok ? "run" : unknown ? "neutral" : "bad";
+  const intact = title === "wlan0" ? "" : "";
+  return `<h2>${esc(title)}</h2>
+    <p class="note">${esc(role)}</p>
+    <div style="margin:8px 0">${pill(ok ? "ASSOCIATED" : (unknown ? "NO READING" : state))}</div>
+    <dl class="kv">
+      <dt>SSID</dt><dd>${esc(dash(iface.ssid))}</dd>
+      <dt>Address</dt><dd>${esc(dash(iface.ip))}</dd>
+      <dt>BSSID</dt><dd>${esc(dash(iface.bssid))}</dd>
+      <dt>State</dt><dd>${esc(dash(iface.state))}</dd>
+    </dl>`;
+}
+
+function renderRadios(s) {
+  $("radio0").innerHTML = radioCard("wlan0", "Management link. This must stay associated.", s.wlan0 || {})
+    + (s.wlan0_intact === true
+      ? `<p class="note">Last result file recorded the management link as intact.</p>`
+      : s.wlan0_intact === false
+        ? `<p class="note">Last result file recorded the management link as not intact.</p>`
+        : `<p class="note">No completed result file in this directory yet.</p>`);
+  const w1 = s.wlan1 || {};
+  $("radio1").innerHTML = radioCard("wlan1", "Assessment radio. Scans and association attempts use this interface.", w1);
+}
+
+function renderWps(list) {
+  $("wps-count").textContent = list.length ? list.length + " recorded" : "";
+  if (!list.length) {
+    $("wps").innerHTML = `<p class="empty">No WPS sweep logs under results-* yet. A sweep started from the network table shows up here.</p>`;
+    return;
+  }
+  $("wps").innerHTML = `<table>
+    <thead><tr><th>Directory</th><th>State</th><th>Progress</th><th>Latest PIN</th><th>Log age</th></tr></thead>
+    <tbody>${list.map((w) => `<tr>
+      <td class="mono">${esc(w.dir)}</td>
+      <td>${pill(w.state)}</td>
+      <td>${esc(w.tried)} / ${esc(w.total || "—")}</td>
+      <td class="mono">${esc(dash(w.current))}</td>
+      <td>${esc(ageText(w.age_sec))}</td>
+    </tr>`).join("")}</tbody></table>`
+    + list.slice(0, 3).map((w) => `<details><summary>${esc(w.dir)} last lines</summary><pre>${esc((w.tail || []).join("\n") || "No lines")}</pre></details>`).join("");
+}
+
+function renderNets(s) {
+  const live = s.scan_live ? "Live scan" : "Saved scan from the run";
+  const when = s.scan_at && s.scan_at !== "-" ? " at " + s.scan_at : "";
+  const age = s.scan_age_sec != null ? ", " + ageText(s.scan_age_sec) : "";
+  $("scan-meta").textContent = `${live}${when}${age}. ${s.net_count || 0} network${s.net_count === 1 ? "" : "s"}.`;
+  if (!s.nets || !s.nets.length) {
+    $("nets").innerHTML = `<p class="empty">Nothing in the scan cache. Refresh scan reads wlan1 and fills this table.</p>`;
+    return;
+  }
+  $("nets").innerHTML = `<table>
+    <thead><tr><th>SSID</th><th>Signal</th><th>Security</th><th>WPS</th><th>BSSID</th><th></th></tr></thead>
+    <tbody>${s.nets.map((n, i) => `<tr>
+      <td>${n.ssid ? esc(n.ssid) : "<em>Hidden</em>"}</td>
+      <td><div class="sig" title="${esc(n.signal)} dBm"><div class="sig-track"><div style="width:${signalPct(n.signal)}%"></div></div><span class="mono">${esc(dash(n.signal))}</span></div></td>
+      <td>${esc(dash(n.sec))}</td>
+      <td>${n.wps ? pill("WPS ON") : '<span class="pill neutral">Off</span>'}</td>
+      <td class="mono">${esc(dash(n.bssid))}</td>
+      <td>${n.wps && n.ssid ? `<button class="btn" type="button" data-wps="${i}">WPS check</button>` : ""}</td>
+    </tr>`).join("")}</tbody></table>`;
+}
+
+function renderLog(s) {
+  $("log-source").textContent = s.log_source ? "Source: " + s.log_source : "No console.log or pwn.log";
+  $("log").textContent = (s.log_tail && s.log_tail.length) ? s.log_tail.join("\n") : "No log lines yet.";
+}
+
+function render(s) {
+  lastNets = s.nets || [];
+  $("clock").textContent = "Status read " + new Date().toLocaleTimeString()
+    + (s.results_dir ? " · " + s.results_dir : "");
+  const svc = s.svc || {};
+  $("services").innerHTML = ["pi-pwn", "pi-dash"].map((name) => {
+    const v = svc[name] || "unknown";
+    const kind = v === "active" ? "run" : v === "inactive" ? "neutral" : "warn";
+    return `<span class="pill ${kind}">${esc(name)} ${esc(v)}</span>`;
+  }).join(" ");
+  renderBanner(s);
+  renderMetrics(s);
+  renderRadios(s);
+  renderWps(s.wps || []);
+  renderNets(s);
+  renderLog(s);
+  const extra = $("radio0").querySelector(".kv");
+  if (extra && (s.security || s.bssid)) {
+    const note = document.createElement("p");
+    note.className = "note";
+    note.textContent = "Target record: " + [s.security, s.bssid].filter(Boolean).join(" · ");
+    $("radio1").appendChild(note);
+  }
+}
+
+async function refresh() {
+  try {
+    const s = await (await fetch("/api/status")).json();
+    render(s);
+  } catch (e) {
+    $("banner").className = "banner bad";
+    $("banner").textContent = "Status request failed: " + e;
+  }
+}
+
+async function rescan() {
+  const b = $("rescan");
+  const msg = $("scan-msg");
+  b.disabled = true;
+  msg.hidden = false;
+  msg.textContent = "Scanning on wlan1. This takes about 10 seconds.";
+  try {
+    await fetch("/api/rescan");
+    msg.textContent = "Scan finished.";
+  } catch (e) {
+    msg.textContent = "Scan failed: " + e;
+  }
+  b.disabled = false;
+  refresh();
+}
+
+async function wpsStart(i) {
+  const n = lastNets[i];
+  if (!n || !n.wps) return;
+  const ok = confirm(`Start the WPS check for "${n.ssid}" (${n.bssid})?\nOne sweep at a time. The access point may stop answering WPS after repeated failures.`);
+  if (!ok) return;
+  const res = await (await fetch(`/api/wps-start?bssid=${encodeURIComponent(n.bssid)}&ssid=${encodeURIComponent(n.ssid)}`)).json();
+  const msg = $("scan-msg");
+  msg.hidden = false;
+  msg.textContent = res.started
+    ? `WPS check started in ${res.started}.`
+    : `WPS check not started: ${res.error || "unknown error"}`;
+  refresh();
+}
+
+$("rescan").addEventListener("click", rescan);
+$("nets").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("[data-wps]");
+  if (btn) wpsStart(Number(btn.dataset.wps));
+});
+refresh();
+pollTimer = setInterval(refresh, 5000);
+</script>
+</body>
+</html>
