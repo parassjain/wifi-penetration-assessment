@@ -294,7 +294,7 @@ button:disabled{opacity:.5}.wpsy{color:#fbbf24;font-weight:700}
 </style></head><body><div id=b>auto-refresh 5s</div><h1>&#128737; Pi Autopwner &mdash; live</h1>
 <div id=u>loading&hellip;</div>
 <script>
-async function r(){try{const s=await (await fetch('/api/status')).json();
+async function r(){try{const s=await (await fetch('/api/status')).json();lastNets=s.nets||[];
 document.getElementById('u').innerHTML=
 `<div class=card><div class=mut>TARGET <b style="color:#fff">${s.target}</b> &middot; phase: ${s.phase} &middot; started ${s.started||'-'} &middot; budget left: ${s.budget_left_min??'-'} min</div>
 <div><span class="pill ${s.run_state=='RUNNING'?'run':(s.run_state=='FINISHED'?'fin':'stall')}">${s.run_state}</span>
@@ -312,11 +312,16 @@ ${s.wps.length? s.wps.map(w=>`<div style="margin-top:8px"><b>${w.dir}</b>
 <pre style="max-height:90px">${w.tail.join('\\n')}</pre></div>`).join('') : '<div class=mut>No WPS sweeps yet</div>'}</div>
 <div class=card><b>WiFi around (${s.net_count})</b> <span class=mut>${s.scan_live?'LIVE scan '+s.scan_at+' ('+s.scan_age_sec+'s ago)':'snapshot from attack start'}</span>
 &ensp;<button id=rs onclick="rescan()">&#8635; Refresh live scan (~10s)</button><span id=rm class=mut></span>
-<table><tr><th>SSID</th><th>BSSID</th><th>Sig</th><th>Sec</th><th>WPS</th><th>Flags</th></tr>${s.nets.map(n=>`<tr><td>${n.ssid||'<i>hidden</i>'}</td><td>${n.bssid}</td><td>${n.signal}</td><td>${n.sec}</td><td class="${n.wps?'wpsy':''}">${n.wps?'YES':''}</td><td class=mut>${n.flags}</td></tr>`).join('')}</table></div>
+<table><tr><th>SSID</th><th>BSSID</th><th>Sig</th><th>Sec</th><th>WPS</th><th>Action</th><th>Flags</th></tr>${s.nets.map((n,i)=>`<tr><td>${n.ssid||'<i>hidden</i>'}</td><td>${n.bssid}</td><td>${n.signal}</td><td>${n.sec}</td><td class="${n.wps?'wpsy':''}">${n.wps?'YES':''}</td><td>${n.wps&&n.ssid?`<button onclick="wpsStart(${i})">\u25b6 WPS test</button>`:''}</td><td class=mut>${n.flags}</td></tr>`).join('')}</table></div>
 <div class=card><b>Live log</b><pre>${s.log_tail.join('\\n')}</pre></div>`;
 }catch(e){document.getElementById('u').innerHTML='fetch error: '+e}}
 async function rescan(){const b=document.getElementById('rs');b.disabled=true;document.getElementById('rm').textContent=' scanning…';
 try{await fetch('/api/rescan');}catch(e){}b.disabled=false;r();}
+let lastNets=[];
+async function wpsStart(i){const n=lastNets[i];if(!n||!n.wps)return;
+if(!confirm(`Start WPS PIN test vs "${n.ssid}" (${n.bssid})?\nOne sweep at a time; ~25 min for 63 PINs. AP may lock WPS after abuse.`))return;
+const res=await (await fetch(`/api/wps-start?bssid=${encodeURIComponent(n.bssid)}&ssid=${encodeURIComponent(n.ssid)}`)).json();
+alert(res.started?`WPS test started: ${res.started} (pid ${res.pid})`:`Not started: ${res.error}`);r();}
 r();setInterval(r,5000)</script></body></html>"""
 
 class H(BaseHTTPRequestHandler):
