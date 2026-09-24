@@ -124,3 +124,16 @@ def test_audit_markdown():
     nets = [{"ssid": "Actyoga", "bssid": "b", "signal": -53, "flags": "[WPA2-PSK-CCMP][ESS]"}]
     md = audit_markdown("Actyoga", nets, {"tried": 5, "total": 10, "password": None, "wlan0_intact": True})
     assert "Actyoga" in md and "Remediation" in md
+
+
+def test_dashboard_status_with_mocked_radio(tmp_path):
+    """Regression: build_status must handle radio.run's (rc, out) tuple."""
+    import types
+    from piwps.web import app
+    app.ARGS = types.SimpleNamespace(dir=str(tmp_path), port=8080)
+    app.run = lambda cmd, timeout=8: (0, "active\n")  # tuple, like radio.run
+    app.iface_status = lambda *a, **k: {"ssid": "-", "state": "?", "ip": "-", "bssid": "-"}
+    app.list_sweeps = lambda d: []
+    s = app.build_status()
+    assert s["svc"] == {"pi-pwn": "active", "pi-dash": "active"}
+    assert s["tried"] == 0 and s["nets"] == []

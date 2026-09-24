@@ -121,8 +121,8 @@ def build_status():
     status_age = int(time.time() - live_run["updated_epoch"]) if live_run.get("updated_epoch") else None
     svc = {}
     for unit in ("pi-pwn", "pi-dash"):
-        svc[unit] = run(["systemctl", "is-active", unit], 5).strip().splitlines()[0:1]
-        svc[unit] = svc[unit][0] if svc[unit] else "unknown"
+        _, out = run(["systemctl", "is-active", unit], 5)
+        svc[unit] = out.strip().splitlines()[0] if out.strip() else "unknown"
     live = get_live_scan()
     nets = live.get("nets") or []
     if not nets:
