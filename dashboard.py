@@ -87,6 +87,57 @@ def sec_short(flags):
     if "WEP" in f: return "WEP"
     return "OPEN"
 
+def wps_sweeps():
+    """Discover WPS sweep dirs (results-* with wps.log) and parse live progress."""
+    base = os.path.dirname(os.path.abspath(OUT)) if not os.path.isdir(OUT) else os.path.abspath(OUT)
+    base = os.path.dirname(base) if os.path.basename(base).startswith("results") else base
+    sweeps = []
+    try:
+        names = sorted(os.listdir(base))
+    except Exception:
+        return sweeps
+    for nm in names:
+        if not nm.startswith("results-"):
+            continue
+        log = os.path.join(base, nm, "wps.log")
+        if not os.path.isfile(log):
+            continue
+        try:
+            tried = total = 0
+            current = "-"
+            with open(log, errors="ignore") as f:
+                for ln in f:
+                    m = re.search(r"(\d+) PINs", ln)
+                    if m and not total:
+                        total = int(m.group(1))
+                    m2 = re.search(r"trying PIN (\S+)", ln)
+                    if m2:
+                        tried += 1
+                        current = m2.group(1).rstrip(" .")
+            tail3 = tail(log, 5)
+            blob = "\n".join(tail3)
+            if "WPS SUCCESS" in blob or os.path.isfile(os.path.join(base, nm, "creds.txt")):
+                state = "SUCCESS"
+            elif "[STOP]" in blob:
+                state = "LOCKED-STOP"
+            elif "[DONE]" in blob:
+                state = "FINISHED"
+            else:
+                try:
+                    age = time.time() - os.path.getmtime(log)
+                except Exception:
+                    age = 9999
+                state = "RUNNING" if age < 120 else "STALLED"
+            try:
+                age = int(time.time() - os.path.getmtime(log))
+            except Exception:
+                age = None
+            sweeps.append({"dir": nm, "tried": tried, "total": total, "current": current,
+                           "state": state, "age_sec": age, "tail": tail3[-4:]})
+        except Exception:
+            pass
+    return sorted(sweeps, key=lambda s: s["dir"], reverse=True)
+
 def build_status():
     log = os.path.join(OUT, "console.log")
     lines = tail(log, 400)
@@ -181,6 +232,7 @@ def build_status():
         "net_count": len(nets),
         "nets": nets[:30],
         "log_tail": tail(log, 12),
+        "wps": wps_sweeps(),
     }
 
 PAGE = """<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -211,6 +263,11 @@ document.getElementById('u').innerHTML=
 ${s.found?`<div class=ok style="font-size:20px;font-weight:700;margin-top:8px">&#127881; PASSWORD: ${s.creds||s.found}</div>`:''}</div>
 <div class=card><b>wlan0</b> (home/SSH): <span class="${s.wlan0.state=='COMPLETED'?'ok':'bad'}">${s.wlan0.state}</span> ${s.wlan0.ssid} ${s.wlan0.ip}
 &emsp;<b>wlan1</b> (attacker): ${s.wlan1.state}</div>
+<div class=card><b>WPS sweeps</b> <span class=mut>(PIN-only attacks — digits, live)</span>
+${s.wps.length? s.wps.map(w=>`<div style="margin-top:8px"><b>${w.dir}</b>
+<span class="pill ${w.state=='RUNNING'?'run':(w.state=='SUCCESS'?'run':(w.state=='FINISHED'?'fin':'stall'))}">${w.state}</span>
+<span class=mut>${w.tried}/${w.total} &middot; now: <b>${w.current}</b> &middot; ${w.age_sec}s ago</span>
+<pre style="max-height:90px">${w.tail.join('\\n')}</pre></div>`).join('') : '<div class=mut>No WPS sweeps yet</div>'}</div>
 <div class=card><b>WiFi around (${s.net_count})</b> <span class=mut>${s.scan_live?'LIVE scan '+s.scan_at+' ('+s.scan_age_sec+'s ago)':'snapshot from attack start'}</span>
 &ensp;<button id=rs onclick="rescan()">&#8635; Refresh live scan (~10s)</button><span id=rm class=mut></span>
 <table><tr><th>SSID</th><th>BSSID</th><th>Sig</th><th>Sec</th><th>WPS</th><th>Flags</th></tr>${s.nets.map(n=>`<tr><td>${n.ssid||'<i>hidden</i>'}</td><td>${n.bssid}</td><td>${n.signal}</td><td>${n.sec}</td><td class="${n.wps?'wpsy':''}">${n.wps?'YES':''}</td><td class=mut>${n.flags}</td></tr>`).join('')}</table></div>
