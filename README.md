@@ -3,6 +3,10 @@
 Midterm tool: recover the test AP password (**target `Vijay`**) within 2h
 **without ever disconnecting the Pi's own WiFi (`wlan0` on `B1-405`)**.
 
+> Code lives in the **`piwps/` package** — see **[ARCHITECTURE.md](ARCHITECTURE.md)**
+> for the module map. One CLI: `python3 -m piwps recon|psk|wps|dashboard|migrate|setup-radio|words`.
+> Pure-logic tests: `python3 -m pytest` (no Pi hardware required).
+
 ## Constraint -> design
 
 Single Broadcom radio, `wlan0` carries SSH + internet. Classic
@@ -20,14 +24,21 @@ interface, own `wpa_supplicant` + ctrl dir). All recon/attacks run on
 - Managed-mode try-to-connect only. No deauth, no injection, no monitor mode.
 - Every run logs `wlan0` health to prove non-disruption.
 
-## Files
+## Files (v0.2 modular layout)
 
-- `setup_wlan1.sh` - create `wlan1` + isolated supplicant (idempotent, root)
-- `candidates.sh` - build wordlist LIVE at runtime (no preload): built-in
-  defaults + SSID mangles + SecLists/top10k over `wlan0` internet, fallback offline
-- `pwn.py` - orchestrator: wait-for-target -> rank -> serial try-connect on
-  `wlan1` -> DHCP prove -> `results/creds.txt + result.json`
-- `run.sh` - headless entry: `sudo ./run.sh --target Vijay --time 100`
+- `piwps/` - the product: `radio` (wlan1 lifecycle) · `scan` (recon) ·
+  `wordlists` (hint/mangle/fetch/merge) · `state` (reboot-safe resume) ·
+  `attacks/psk` + `attacks/wps` (single PIN engine, profiles) ·
+  `report` · `web/` (dashboard API + static UI)
+- `scripts/` - thin wrappers: `setup_wlan1.sh`, `run.sh`, `dash-start.sh`,
+  `build48.sh` (queue composer)
+- `systemd/` - `pi-pwn.service` + `pi-dash.service` (autostart, resume on boot)
+- `tests/` - pytest unit tests (15 tests, hardware-free)
+- `words/`, `results*/` - runtime data, gitignored
+
+Legacy flat scripts (`pwn.py`, `dashboard.py`, `wps_try*.sh`, `candidates.sh`,
+`build48*.sh`, `migrate.py`) were consolidated into `piwps/` in v0.2;
+see git history if you need them.
 
 ## Runbook (exam, 2h)
 

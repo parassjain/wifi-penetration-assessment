@@ -1,0 +1,8 @@
+[project]
+name = "piwps"
+version = "0.2.0"
+description = "Dual-STA WiFi penetration assessment tool for Raspberry Pi (stock radio)"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

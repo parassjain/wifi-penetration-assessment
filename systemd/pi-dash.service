@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/paras/wifi-penetration-assessment
-ExecStart=/usr/bin/python3 /home/paras/wifi-penetration-assessment/dashboard.py --port 8080 --dir /home/paras/wifi-penetration-assessment/results-b1-48h
+ExecStart=/usr/bin/python3 -m piwps dashboard --port 8080 --dir /home/paras/wifi-penetration-assessment/results-b1-48h
 Restart=on-failure
 RestartSec=10
 

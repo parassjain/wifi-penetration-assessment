@@ -1,0 +1,46 @@
+<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Pi Pwn Dashboard</title><style>
+body{font-family:system-ui,sans-serif;background:#0f1420;color:#e8ecf4;margin:0;padding:16px}
+h1{font-size:20px;margin:0 0 12px}.card{background:#1a2233;border-radius:10px;padding:12px 16px;margin-bottom:12px}
+.big{font-size:34px;font-weight:700}.ok{color:#4ade80}.bad{color:#f87171}.mut{color:#93a0b8}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:4px 6px;border-bottom:1px solid #2a3550;text-align:left}
+pre{background:#0b0f18;border-radius:8px;padding:10px;overflow:auto;font-size:12px;max-height:260px}
+#b{position:fixed;top:12px;right:14px;font-size:12px;color:#93a0b8}
+button{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer}
+button:disabled{opacity:.5}.wpsy{color:#fbbf24;font-weight:700}
+.bar{height:10px;background:#0b0f18;border-radius:6px;overflow:hidden;margin:8px 0}
+.bar>div{height:100%;background:#2563eb}
+.pill{display:inline-block;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:700}
+.run{background:#14532d;color:#4ade80}.stall{background:#7f1d1d;color:#f87171}.fin{background:#1e3a8a;color:#93c5fd}
+</style></head><body><div id=b>auto-refresh 5s</div><h1>&#128737; Pi Autopwner &mdash; live</h1>
+<div id=u>loading&hellip;</div>
+<script>
+let lastNets=[];
+async function r(){try{const s=await (await fetch('/api/status')).json();lastNets=s.nets||[];
+document.getElementById('u').innerHTML=
+`<div class=card><div class=mut>TARGET <b style="color:#fff">${s.target}</b> &middot; phase: ${s.phase} &middot; started ${s.started||'-'} &middot; budget left: ${s.budget_left_min??'-'} min</div>
+<div><span class="pill ${s.run_state=='RUNNING'?'run':(s.run_state=='FINISHED'?'fin':'stall')}">${s.run_state}</span>
+<span class=mut> status ${s.status_age_sec??'-'}s ago &middot; svc pi-pwn:${s.svc['pi-pwn']||'?'} pi-dash:${s.svc['pi-dash']||'?'}</span></div>
+<div class=big>${s.tried} <span class=mut style="font-size:18px">/ ${s.total} (${s.pct}%)</span></div>
+<div class=bar><div style="width:${s.pct}%"></div></div>
+<div>trying now: <b>${s.current}</b> &middot; rate: ${s.rate_per_min||'-'}/min &middot; ETA: ${s.eta_min??'-'} min</div>
+${s.found?`<div class=ok style="font-size:20px;font-weight:700;margin-top:8px">&#127881; PASSWORD: ${s.creds||s.found}</div>`:''}</div>
+<div class=card><b>wlan0</b> (home/SSH): <span class="${s.wlan0.state=='COMPLETED'?'ok':'bad'}">${s.wlan0.state}</span> ${s.wlan0.ssid} ${s.wlan0.ip}
+&emsp;<b>wlan1</b> (attacker): ${s.wlan1.state}</div>
+<div class=card><b>WPS sweeps</b> <span class=mut>(PIN-only attacks — digits, live)</span>
+${s.wps.length? s.wps.map(w=>`<div style="margin-top:8px"><b>${w.dir}</b>
+<span class="pill ${w.state=='RUNNING'?'run':(w.state=='SUCCESS'?'run':(w.state=='FINISHED'?'fin':'stall'))}">${w.state}</span>
+<span class=mut>${w.tried}/${w.total} &middot; now: <b>${w.current}</b> &middot; ${w.age_sec}s ago</span>
+<pre style="max-height:90px">${w.tail.join('\n')}</pre></div>`).join('') : '<div class=mut>No WPS sweeps yet</div>'}</div>
+<div class=card><b>WiFi around (${s.net_count})</b> <span class=mut>${s.scan_live?'LIVE scan '+s.scan_at+' ('+s.scan_age_sec+'s ago)':'snapshot from attack start'}</span>
+&ensp;<button id=rs onclick="rescan()">&#8635; Refresh live scan (~10s)</button><span id=rm class=mut></span>
+<table><tr><th>SSID</th><th>BSSID</th><th>Sig</th><th>Sec</th><th>WPS</th><th>Action</th><th>Flags</th></tr>${s.nets.map((n,i)=>`<tr><td>${n.ssid||'<i>hidden</i>'}</td><td>${n.bssid}</td><td>${n.signal}</td><td>${n.sec}</td><td class="${n.wps?'wpsy':''}">${n.wps?'YES':''}</td><td>${n.wps&&n.ssid?`<button onclick="wpsStart(${i})">\u25b6 WPS test</button>`:''}</td><td class=mut>${n.flags}</td></tr>`).join('')}</table></div>
+<div class=card><b>Live log</b><pre>${s.log_tail.join('\n')}</pre></div>`;
+}catch(e){document.getElementById('u').innerHTML='fetch error: '+e}}
+async function rescan(){const b=document.getElementById('rs');b.disabled=true;document.getElementById('rm').textContent=' scanning…';
+try{await fetch('/api/rescan');}catch(e){}b.disabled=false;r();}
+async function wpsStart(i){const n=lastNets[i];if(!n||!n.wps)return;
+if(!confirm(`Start WPS PIN test vs "${n.ssid}" (${n.bssid})?\nOne sweep at a time; ~25 min for 63 PINs. AP may lock WPS after abuse.`))return;
+const res=await (await fetch(`/api/wps-start?bssid=${encodeURIComponent(n.bssid)}&ssid=${encodeURIComponent(n.ssid)}`)).json();
+alert(res.started?`WPS test started: ${res.started} (pid ${res.pid})`:`Not started: ${res.error}`);r();}
+r();setInterval(r,5000)</script></body></html>
