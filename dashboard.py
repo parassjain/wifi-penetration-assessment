@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """dashboard.py - live web UI for the Pi autopwner. Stdlib only.
 Shows: target, progress tried/total, rate + ETA, wlan0/wlan1 health,
-result/creds when found, LIVE wifi list (refreshable wlan1 scan), live log tail.
+result/creds when found, LIVE wifi list (refreshable wlan1 scan),
+click-to-start WPS tests, live log tail.
 
 Usage (as root, so wpa_cli works): sudo nohup python3 dashboard.py --port 8080 --dir ./results-actyoga2 &
 Then open http://<pi-ip>:8080/ from a laptop on the same LAN.
 """
 import argparse, json, os, re, subprocess, time, threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--port", type=int, default=8080)
 ap.add_argument("--dir", default="./results-actyoga2")
 ARGS = ap.parse_args()
 OUT = ARGS.dir
+REPO = os.getcwd()
 
 WLAN1_CTRL = "/run/wpa_supplicant_pwn"
+WPS_SCRIPT = os.path.join(REPO, "wps_try_r4.sh")
+SETUP_SCRIPT = os.path.join(REPO, "setup_wlan1.sh")
 SCAN_CACHE = os.path.join(OUT, "live_scan.json")
 scan_lock = threading.Lock()
 
@@ -137,6 +142,43 @@ def wps_sweeps():
         except Exception:
             pass
     return sorted(sweeps, key=lambda s: s["dir"], reverse=True)
+
+def wps_currently_running():
+    for sw in wps_sweeps():
+        if sw["state"] == "RUNNING":
+            return sw
+    return None
+
+def start_wps_test(bssid, ssid):
+    """Launch a WPS PIN sweep against one AP. One at a time (single radio)."""
+    if not re.match(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$", bssid or ""):
+        return {"error": "bad BSSID"}
+    ssid = (ssid or "").strip()[:32]
+    if not ssid:
+        return {"error": "empty SSID"}
+    busy = wps_currently_running()
+    if busy:
+        return {"error": f"sweep already running: {busy['dir']} ({busy['tried']}/{busy['total']})"}
+    if not os.path.isfile(WPS_SCRIPT):
+        return {"error": "wps_try_r4.sh missing on Pi"}
+    # ensure attacker interface is up (idempotent, never touches wlan0)
+    st = iface_status("wlan1", WLAN1_CTRL)
+    if st["state"] == "?":
+        out = sh(["bash", SETUP_SCRIPT], timeout=60)
+        st = iface_status("wlan1", WLAN1_CTRL)
+        if st["state"] == "?":
+            return {"error": f"wlan1 supplicant unavailable: {out[-200:]}"}
+    d = "results-wps-" + time.strftime("%m%d-%H%M%S")
+    outdir = os.path.join(REPO, d)
+    os.makedirs(outdir, exist_ok=True)
+    logf = open(os.path.join(outdir, "launcher.log"), "a")
+    try:
+        p = subprocess.Popen(["bash", WPS_SCRIPT, bssid, ssid, outdir],
+                             stdin=subprocess.DEVNULL, stdout=logf, stderr=subprocess.STDOUT,
+                             start_new_session=True, cwd=REPO)
+    except Exception as e:
+        return {"error": str(e)}
+    return {"started": d, "pid": p.pid, "bssid": bssid, "ssid": ssid}
 
 def build_status():
     log = os.path.join(OUT, "console.log")
@@ -284,10 +326,19 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body))); self.end_headers()
         self.wfile.write(body)
     def do_GET(self):
-        if self.path == "/api/status":
+        pu = urlparse(self.path)
+        if pu.path == "/api/status":
             self._send(json.dumps(build_status()).encode(), "application/json")
-        elif self.path == "/api/rescan":
+        elif pu.path == "/api/rescan":
             self._send(json.dumps(do_live_scan()).encode(), "application/json")
+        elif pu.path == "/api/wps-start":
+            q = parse_qs(pu.query)
+            res = start_wps_test(q.get("bssid", [""])[0], q.get("ssid", [""])[0])
+            code = 200 if "started" in res else 409
+            body = json.dumps(res).encode()
+            self.send_response(code); self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body))); self.end_headers()
+            self.wfile.write(body)
         else:
             self._send(PAGE.encode(), "text/html; charset=utf-8")
 
