@@ -1,0 +1,14 @@
+[Unit]
+Description=Pi autopwner live dashboard
+After=network-online.target pi-pwn.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/paras/wifi-penetration-assessment
+ExecStart=/usr/bin/python3 /home/paras/wifi-penetration-assessment/dashboard.py --port 8080 --dir /home/paras/wifi-penetration-assessment/results-b1-48h
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

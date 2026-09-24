@@ -1,0 +1,15 @@
+[Unit]
+Description=Pi dual-STA wifi autopwner (attacks via wlan1, wlan0 untouched)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/paras/wifi-penetration-assessment
+ExecStartPre=/home/paras/wifi-penetration-assessment/setup_wlan1.sh
+ExecStart=/usr/bin/python3 /home/paras/wifi-penetration-assessment/pwn.py --target 2.4G_B1 --time 2880 --out /home/paras/wifi-penetration-assessment/results-b1-48h --words /home/paras/wifi-penetration-assessment/words/combined48.txt
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
