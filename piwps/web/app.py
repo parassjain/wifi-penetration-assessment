@@ -121,8 +121,11 @@ def build_status():
     status_age = int(time.time() - live_run["updated_epoch"]) if live_run.get("updated_epoch") else None
     svc = {}
     for unit in ("pi-pwn", "pi-dash"):
-        _, out = run(["systemctl", "is-active", unit], 5)
-        svc[unit] = out.strip().splitlines()[0] if out.strip() else "unknown"
+        _, svc_out = run(["systemctl", "is-active", unit], 5)
+        line = svc_out.strip().splitlines()[0] if svc_out.strip() else "unknown"
+        if line.startswith("ERROR") or "No such file" in line:
+            line = "unavailable"
+        svc[unit] = line
     live = get_live_scan()
     nets = live.get("nets") or []
     if not nets:

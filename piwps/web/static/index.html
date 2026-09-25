@@ -240,7 +240,9 @@ function renderMetrics(s) {
     ["ETA", s.eta_min == null ? "—" : esc(s.eta_min) + " min", "Updated " + ageText(s.status_age_sec)],
   ];
   $("metrics").innerHTML = items.map(([label, value, sub]) =>
-    `<article class="card"><div class="stat-label">${label}</div><div class="stat-value">${value}</div><div class="stat-sub">${sub}</div></article>`
+    `<article class="card"><div class="stat-label">${label}</div><div class="stat-value">${value}</div><div class="stat-sub">${sub}</div>${
+      label === "Progress" && s.total ? `<div class="bar" aria-hidden="true"><div style="width:${Math.max(0, Math.min(100, Number(s.pct) || 0))}%"></div></div>` : ""
+    }</article>`
   ).join("");
 }
 
@@ -300,13 +302,11 @@ function renderNets(s) {
     return;
   }
   $("nets").innerHTML = `<table>
-    <thead><tr><th>SSID</th><th>Signal</th><th>Security</th><th>WPS</th><th>BSSID</th><th></th></tr></thead>
+    <thead><tr><th>Network</th><th>Signal</th><th>Security</th><th></th></tr></thead>
     <tbody>${s.nets.map((n, i) => `<tr>
-      <td>${n.ssid ? esc(n.ssid) : "<em>Hidden</em>"}</td>
+      <td>${n.ssid ? esc(n.ssid) : "<em>Hidden</em>"}<div class="mono">${esc(dash(n.bssid))}</div></td>
       <td><div class="sig" title="${esc(n.signal)} dBm"><div class="sig-track"><div style="width:${signalPct(n.signal)}%"></div></div><span class="mono">${esc(dash(n.signal))}</span></div></td>
-      <td>${esc(dash(n.sec))}</td>
-      <td>${n.wps ? pill("WPS ON") : '<span class="pill neutral">Off</span>'}</td>
-      <td class="mono">${esc(dash(n.bssid))}</td>
+      <td>${esc(dash(n.sec))}<div>${n.wps ? pill("WPS ON") : '<span class="pill neutral">WPS off</span>'}</div></td>
       <td>${n.wps && n.ssid ? `<button class="btn" type="button" data-wps="${i}">WPS check</button>` : ""}</td>
     </tr>`).join("")}</tbody></table>`;
 }
