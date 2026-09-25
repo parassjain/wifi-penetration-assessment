@@ -96,3 +96,37 @@ def fetch_lines(url, timeout=60):
 
 def filter_lengths(lines):
     return [ln for ln in lines if MIN_PSK_LEN <= len(ln) <= MAX_PSK_LEN]
+
+
+def _wps_with_checksum(prefix7):
+    from .attacks.wps import checksum_digit
+    return prefix7 + checksum_digit(prefix7)
+
+
+def wps_pin_candidates():
+    """Expanded WPS PIN corpus (~1100), checksum-valid, most-patterned first.
+
+    Lottery beyond documented defaults (no halves oracle on stock radio),
+    but it is the only non-physical move left: pairs, year-embedded,
+    sequences and serial-like prefixes, deduplicated, order = attack order.
+    """
+    prefixes = []
+    for a in range(10):  # ABABABA pairs
+        for b in range(10):
+            prefixes.append(f"{a}{b}" * 3 + f"{a}")
+    for y in range(1960, 2036):  # year-embedded
+        for s in ("000", "111", "123", "321", "456", "654",
+                  "789", "987", "007", "700", "121", "212"):
+            prefixes.append(f"{y}{s}")
+    for p in ("1234567", "7654321", "9876543", "1357924", "2468135",
+              "1122334", "1212121", "1020304", "1000001", "2000002"):
+        prefixes.append(p)
+    for i in range(100):  # serial-like 1000000+i
+        prefixes.append(f"{1000000 + i}")
+    seen, out = set(), []
+    for p in prefixes:
+        pin = _wps_with_checksum(p)
+        if pin not in seen:
+            seen.add(pin)
+            out.append(pin)
+    return out

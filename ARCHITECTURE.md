@@ -22,9 +22,11 @@ piwps/wordlists.py   pure candidate builders (hint/mangle/fetch/merge)
 piwps/state.py       reboot safety: done.log + run.json + status.json
 piwps/attacks/psk.py managed-mode passphrase attempts (bssid-pin, fail-fast)
 piwps/attacks/wps.py ONE pin engine + profiles + checksum validation + lockout detect
+piwps/wpsd (in __main__) persistent WPS supervisor: corpus batches, done.log
+                     resume across reboots, lockout backoff, success-stop
 piwps/report.py      result.json / creds.txt / sweep discovery / audit markdown
 piwps/web/           dashboard backend (app.py) + frontend (static/index.html)
-piwps/__main__.py    CLI: recon | psk | wps | dashboard | migrate | setup-radio | words
+piwps/__main__.py    CLI: recon | psk | wps | wpsd | dashboard | migrate | setup-radio | words
 scripts/             thin shell wrappers (setup, install, run)
 systemd/             pi-pwn.service + pi-dash.service (autostart on boot)
 tests/               pytest, pure logic, no hardware required

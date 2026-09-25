@@ -175,3 +175,64 @@ def test_pixie_reassemble_and_harvest():
     assert pixie.have_minimum_for_pixie({"attrs": {}}) is False
     args = pixie.pixie_args(h, essid="X")
     assert "--pkr" in args and "--essid" in args
+
+
+def test_wps_corpus_shape():
+    c = wordlists.wps_pin_candidates()
+    assert len(c) == 1120
+    assert c[0] == "00000000"
+    assert len(set(c)) == len(c)
+    assert all(wps.valid_pin(p) for p in c)
+
+
+def _fake_wps_radio(monkeypatch, states):
+    import piwps.attacks.wps as w
+    it = iter(states)
+
+    def fake_wpa_cli(ctrl, iface, *args, timeout=15):
+        if args[0] == "add_network":
+            return (0, "3")
+        if args[0] == "status":
+            try:
+                st = next(it)
+            except StopIteration:
+                st = "wpa_state=DISCONNECTED"
+            return (0, st)
+        return (0, "OK")
+
+    monkeypatch.setattr(w, "wpa_cli", fake_wpa_cli)
+    monkeypatch.setattr(w, "run", lambda cmd, timeout=15: (0, ""))
+    import time as _t
+    monkeypatch.setattr(_t, "sleep", lambda s: None)
+
+
+def test_wps_sweep_done_skip_and_pins(monkeypatch, tmp_path):
+    import piwps.attacks.wps as w
+    _fake_wps_radio(monkeypatch, ["wpa_state=DISCONNECTED"] * 20)
+    msgs = []
+    res = w.sweep("b", "s", ["11111115", "22222220", "33333335"], str(tmp_path),
+                  msgs.append, wait_s=1, done={"11111115"})
+    assert res["attempted_pins"] == ["22222220", "33333335"]
+    assert res["reason"] == "exhausted"
+    assert any("already tried" in m for m in msgs)
+
+
+def test_wps_sweep_lockout(monkeypatch, tmp_path):
+    import piwps.attacks.wps as w
+    _fake_wps_radio(monkeypatch, ["wpa_state=INACTIVE"] * 30)
+    res = w.sweep("b", "s", ["11111115", "22222220", "33333335", "44444440"],
+                  str(tmp_path), lambda m: None, wait_s=1)
+    assert res["reason"] == "locked"
+    assert len(res["attempted_pins"]) == 3
+
+
+def test_other_sweep_active(tmp_path, monkeypatch):
+    import piwps.__main__ as cli
+    import time as _t
+    a = tmp_path / "results-a"
+    a.mkdir()
+    (a / "wps.log").write_text("[*] trying PIN 1 ...\n")
+    assert cli._other_sweep_active(str(tmp_path / "results-b")) == "results-a"
+    old = _t.time() - 1000
+    os.utime(a / "wps.log", (old, old))
+    assert cli._other_sweep_active(str(tmp_path / "results-b")) is None

