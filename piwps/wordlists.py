@@ -130,3 +130,55 @@ def wps_pin_candidates():
             seen.add(pin)
             out.append(pin)
     return out
+
+
+def _date_prefixes():
+    """DDMMYY0 + MMDDYY0 7-char prefixes for 1950-2040 (valid dates only)."""
+    import datetime
+    out = []
+    for y in range(1950, 2041):
+        for m in range(1, 13):
+            for d in (1, 15):
+                try:
+                    datetime.date(y, m, d)
+                except ValueError:
+                    continue
+                out.append(f"{d:02d}{m:02d}{y % 100:02d}0")
+                out.append(f"{m:02d}{d:02d}{y % 100:02d}0")
+    return out
+
+
+def wps_pin_stream(done=None):
+    """Inexhaustible likelihood-ordered PIN stream (generator).
+
+    Tier 0: curated corpus. Tier 1: date-like prefixes. Tier 2: the full
+    10^7 prefix space sequentially - every prefix yields exactly one valid
+    PIN via checksum, so this never runs dry (~11 years at 35s/try).
+    done: LIVE set of tried PINs (supervisor adds to it as it goes; the
+    stream skips anything already in it, incl. across reboots via done.log).
+    Memory grows ~90B per try - the AP will give up centuries first.
+    """
+    tried = done if done is not None else set()
+    emitted = set()
+
+    def fresh(pin):
+        return pin not in emitted and pin not in tried
+
+    def emit(pin):
+        emitted.add(pin)
+        return pin
+
+    for pin in wps_pin_candidates():
+        if fresh(pin):
+            yield emit(pin)
+    for p in _date_prefixes():
+        pin = _wps_with_checksum(p)
+        if fresh(pin):
+            yield emit(pin)
+    n = 0
+    while n <= 9999999:
+        pin = _wps_with_checksum(f"{n:07d}")
+        if pin not in tried and pin not in emitted:
+            emitted.add(pin)
+            yield pin
+        n += 1

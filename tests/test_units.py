@@ -236,3 +236,15 @@ def test_other_sweep_active(tmp_path, monkeypatch):
     old = _t.time() - 1000
     os.utime(a / "wps.log", (old, old))
     assert cli._other_sweep_active(str(tmp_path / "results-b")) is None
+
+
+def test_wps_stream_shape_and_skip():
+    import itertools
+    from piwps.attacks.wps import valid_pin
+    first = list(itertools.islice(wordlists.wps_pin_stream(), 6000))
+    assert len(first) == 6000
+    assert all(len(p) == 8 and valid_pin(p) for p in first)
+    assert first[:1120] == wordlists.wps_pin_candidates()  # tier 0 first, same order
+    assert len(set(first)) == len(first)  # no repeats across tiers
+    skipped = list(itertools.islice(wordlists.wps_pin_stream(set(first[:10])), 3))
+    assert skipped == first[10:13]  # done-set resume works

