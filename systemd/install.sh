@@ -1,12 +1,21 @@
 #!/bin/bash
-# install.sh - enable reboot-safe autopwner + dashboard. Run as root, once.
-# After a power cut the Pi resumes the attack from OUT/done.log automatically.
+# install.sh - enable reboot-safe services. Run as root, once (re-runnable).
+# pi-pwn (dictionary) and pi-wps (persistent WPS) are independent; enable
+# only the ones wanted. pi-dash (UI) is always safe to enable.
+# After a power cut, enabled services resume automatically (done.log resume).
 set -u
 REPO=/home/paras/wifi-penetration-assessment
-if [ "$(id -u)" -ne 0 ]; then echo "run as root: sudo ./install.sh"; exit 1; fi
-cp "$REPO/systemd/pi-pwn.service" "$REPO/systemd/pi-dash.service" /etc/systemd/system/
+if [ "$(id -u)" -ne 0 ]; then echo "run as root: sudo ./install.sh [pwn|wps|dash|all]"; exit 1; fi
+WANT="${1:-all}"
+cp "$REPO"/systemd/pi-*.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable pi-pwn.service pi-dash.service
-echo "[OK] enabled. Check: systemctl status pi-pwn pi-dash"
-echo "Start now without reboot: systemctl start pi-pwn pi-dash"
-echo "Logs: journalctl -u pi-pwn -f  |  tail -f $REPO/results-b1-48h/console.log"
+enable() { systemctl enable "$1"; }
+case "$WANT" in
+  pwn) enable pi-pwn.service;;
+  wps) enable pi-wps.service;;
+  dash) enable pi-dash.service;;
+  all) enable pi-pwn.service; enable pi-wps.service; enable pi-dash.service;;
+  *) echo "unknown: $WANT (pwn|wps|dash|all)"; exit 1;;
+esac
+echo "[OK] enabled: $WANT. Status: systemctl status pi-pwn pi-wps pi-dash"
+echo "Start now without reboot: systemctl start pi-wps pi-dash"
