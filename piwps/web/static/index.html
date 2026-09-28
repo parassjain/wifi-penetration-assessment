@@ -194,6 +194,7 @@ function pill(state) {
   const s = state || "UNKNOWN";
   const kind = s === "RUNNING" || s === "SUCCESS" ? "run"
     : s === "FINISHED" ? "info"
+    : s === "PAUSED" ? "warn"
     : s === "LOCKED-STOP" || s === "STALLED" ? "bad"
     : "neutral";
   return `<span class="pill ${kind}">${esc(s)}</span>`;

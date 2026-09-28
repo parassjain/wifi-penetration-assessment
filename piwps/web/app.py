@@ -142,8 +142,15 @@ def build_status():
     phase = "hint" if tried <= 730 else "generic"
     pct = round(100.0 * tried / total, 1) if total else 0
     done_flag = bool(result.get("password")) or any("[DONE]" in ln for ln in lines[-3:])
-    run_state = ("FINISHED" if done_flag
-                 else ("RUNNING" if (status_age is not None and status_age < 300) else "STALLED"))
+    fresh = status_age is not None and status_age < 300
+    if done_flag:
+        run_state = "FINISHED"
+    elif fresh:
+        run_state = "RUNNING"
+    elif svc.get("pi-pwn") == "active":
+        run_state = "STALLED"  # service on but silent = genuinely stuck
+    else:
+        run_state = "PAUSED"  # service intentionally off, resume anytime
     return {
         "target": result.get("target") or live_run.get("target"),
         "security": result.get("security"),
